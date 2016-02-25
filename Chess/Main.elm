@@ -2,7 +2,7 @@ import Array exposing (get)
 import Char
 import Color
 import Dict exposing (Dict, insert)
-import Graphics.Element exposing (Element, below, beside, centered, color, container, down, empty, flow, middle, opacity, outward, right, size, spacer)
+import Graphics.Element exposing (Element, above, below, beside, centered, color, container, down, empty, flow, leftAligned, middle, opacity, outward, right, size, spacer, width)
 import Graphics.Input exposing (button, clickable, dropDown)
 import Html exposing (Html, fromElement)
 import List exposing (filter, map, map2, member)
@@ -14,7 +14,7 @@ import Text exposing (fromString, height, monospace, typeface)
 import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, board_clear, board_get, board_set, game_to_FEN, initial_game, legal_moves, make_move, move_to_string, opposite, rank_index_to_string, square_to_string)
 
 square n = size n n empty
-unit = 50
+unit = 60
 unit_square = square unit
 unit_spacer = spacer unit unit
 unit_string = fromString >> typeface ["arial", "tahoma", "helvetica"] >> height (0.75 * unit) >> centered >> container unit unit middle
@@ -91,6 +91,20 @@ add_handler address { game, state, message } square element =
     PickPromotionPiece dict ->
       element
 
+moves_to_element : Model -> Element
+moves_to_element model =
+  let moves_to_string n l =
+        let format_string = fromString >> height (unit/4) >> leftAligned >> width unit
+            numbered_move_to_string m = format_string (toString n ++ ". " ++ move_to_string m)
+            move_pair w b = flow right [numbered_move_to_string w, format_string (move_to_string b)] in
+        case l of
+        w :: b :: l' -> move_pair w b :: moves_to_string (n+1) l'
+        w :: [] -> [numbered_move_to_string w]
+        [] -> []
+  in List.reverse model.game.moves_played |>
+     moves_to_string 1 |>
+     flow down
+
 model_to_element: Signal.Address Action -> Model -> Element
 model_to_element address model =
   let file_to_element r f = piece_to_element model (f,r) |> add_handler address model (f,r)
@@ -98,10 +112,14 @@ model_to_element address model =
       rank_to_element r = rank_legend r :: map (file_to_element r) [0..7]
       file_legend = unit_spacer :: map unit_string ["a", "b", "c", "d", "e", "f", "g", "h"]
       status_message = [unit_spacer, fromString model.message |> centered >> container (8*unit) unit middle]
-      board = status_message :: map rank_to_element [7,6,5,4,3,2,1,0] ++ [file_legend] |> map (flow right) |> flow down
-  in case model.state of
-       PickPromotionPiece dict -> flow outward [board, promotion_dropdown address dict model.game.to_move]
-       _ -> board
+      fen_message = [unit_spacer, game_to_FEN model.game |> fromString |> height (unit/5) |> centered |> container (8*unit) unit middle]
+      board = status_message :: map rank_to_element [7,6,5,4,3,2,1,0] ++ [file_legend, fen_message] |> map (flow right) |> flow down
+      moves = unit_spacer `above` (unit_spacer `beside` moves_to_element model)
+      board' =
+        case model.state of
+        PickPromotionPiece dict -> flow outward [board, promotion_dropdown address dict model.game.to_move]
+        _ -> board
+  in board' `beside` moves
 
 type Action = ClearSelection | PieceSelected (List Move)| MoveSelected (List Move) | OfferDraw | Resign
 

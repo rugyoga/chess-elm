@@ -19,7 +19,8 @@ type alias Move = { piece: Piece, from: SquareIndex, to: SquareIndex, info: Mayb
 type Info = Promotion Piece | EnPassant | Castled
 type alias CanCastle = { kingside: Bool, queenside: Bool }
 type alias Castling = { white: CanCastle, black: CanCastle }
-type alias Game = { board: Board ColorPiece, to_move: Color, castling: Castling, en_passant: Maybe SquareIndex, capture_or_pawn_move: Int, move_number: Int, moves_played: List Move }
+type alias Game = { board: Board ColorPiece, to_move: Color, castling: Castling,
+ en_passant: Maybe SquareIndex, capture_or_pawn_move: Int, move_number: Int, moves_played: List Move }
 
 type alias MoveList = List (List Move)
 type alias CandidateMoves = List (List SquareIndex)
@@ -213,9 +214,10 @@ pawn_move board color from ((to_f, to_r) as to) dir captured =
 
 pawn_moves_forward : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> RankDelta -> List Move
 pawn_moves_forward board (file, rank) color second dir =
-  if isEmpty board (file, rank+dir)
-  then pawn_move board color (file, rank) (file, rank+dir) dir Nothing ++
-       let fourth = rank+dir+dir in
+  let third = rank+dir in
+  if isEmpty board (file, third)
+  then pawn_move board color (file, rank) (file, third) dir Nothing ++
+       let fourth = third+dir in
        if rank == second && isEmpty board (file, fourth)
        then pawn_move board color (file, rank) (file, fourth) dir Nothing
        else []
