@@ -142,6 +142,22 @@ move_to_string { piece, from, to, info, check, captured } =
         check_to_string = if check then "+" else ""
     in piece_to_string piece ++ square_to_string to ++ captured_to_string ++ check_to_string
 
+a1 = (0,0)
+c1 = (2,0)
+d1 = (3,0)
+e1 = (4,0)
+f1 = (5,0)
+g1 = (6,0)
+h1 = (7,0)
+a8 = (0,7)
+b8 = (1,7)
+c8 = (2,7)
+d8 = (3,7)
+e8 = (4,7)
+f8 = (5,7)
+g8 = (6,7)
+h8 = (7,7)
+
 make_move : Game -> Move -> Game
 make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_number, moves_played} as game) ({ piece, from, to, info, check, captured } as move) =
   let piece' =
@@ -149,21 +165,32 @@ make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_nu
           Just (Promotion promoted_piece) -> promoted_piece
           _ -> piece
       board' = board_set (board_clear board from) to (to_move, piece')
+      board'' =
+        case (to_move, info) of
+        (White, Just Castled) ->
+          if to == c1
+          then board_set (board_clear board' a1) d1 (White, R)
+          else board_set (board_clear board' h1) f1 (White, R)
+        (Black, Just Castled) ->
+          if to == c8
+          then board_set (board_clear board' a8) d8 (Black, R)
+          else board_set (board_clear board' h8) f8 (Black, R)
+        _ -> board'
       to_move' = opposite to_move
       castling' =
         case (to_move, piece, from) of
           (White, K, _)     -> { white = { queenside = False, kingside = False }, black = castling.black }
           (White, R, (0,0)) -> { white = { queenside = False, kingside = castling.white.kingside }, black = castling.black }
-          (White, R, (0,7)) -> { white = { queenside = castling.white.queenside, kingside = False }, black = castling.black }
+          (White, R, (7,0)) -> { white = { queenside = castling.white.queenside, kingside = False }, black = castling.black }
           (Black, K, _)     -> { white = castling.white, black = { queenside = False, kingside = False } }
-          (Black, R, (7,0)) -> { white = castling.white, black = { queenside = False, kingside = castling.black.kingside } }
+          (Black, R, (0,7)) -> { white = castling.white, black = { queenside = False, kingside = castling.black.kingside } }
           (Black, R, (7,7)) -> { white = castling.white, black = { queenside = castling.black.queenside, kingside = False } }
           _                 -> castling
-      en_passant' = if piece == P && abs (rank from - rank to) == 2 then Just (file from, if to_move == White then 3 else 6) else Nothing
+      en_passant' = if piece == P && abs (rank from - rank to) == 2 then Just (file from, if to_move == White then 2 else 6) else Nothing
       capture_or_pawn_move' = if piece == P || captured /= Nothing then 0 else capture_or_pawn_move + 1
       move_number' = if to_move == White then move_number + 1 else move_number
       moves_played' = move :: moves_played
-  in { board = board', to_move = to_move', castling = castling',
+  in { board = board'', to_move = to_move', castling = castling',
        en_passant = en_passant', capture_or_pawn_move = capture_or_pawn_move',
        move_number = move_number', moves_played = moves_played'}
 
@@ -235,12 +262,39 @@ legal_moves_for board (square, cp) =
     (Black, P)     -> legal_moves_for_pawn board square Black 6 -1
     (color, piece) -> legal_moves_for_piece board square cp
 
+castling_moves : Game -> List Move
+castling_moves game =
+  let are_empty = map (flip Dict.member game.board) >> List.any identity >> not
+      castles from to = { piece = K, from = from, to = to, info = Just Castled, check = False, captured = Nothing }
+  in case (game.to_move) of
+     White ->
+       if game.castling.white.queenside && are_empty [d1, c1] then [castles e1 c1] else [] ++
+       if game.castling.white.kingside  && are_empty [f1, g1] then [castles e1 g1] else []
+     Black ->
+       if game.castling.black.queenside && are_empty [d8, c8] then [castles e8 c8] else [] ++
+       if game.castling.black.kingside  && are_empty [f8, g8] then [castles e8 g8] else []
+
+en_passant_moves : Game -> List Move
+en_passant_moves game =
+  let en_passant_move from to = { piece = P, from = from, to = to, info = Just EnPassant, check = False, captured = Just P }
+  in case (game.to_move, game.en_passant) of
+     (_, Nothing) -> []
+     (White, Just (f,r)) ->
+       if get (f-1, r-1) game.board == Just (White, P) then [en_passant_move (f-1, r-1) (f,r)] else [] ++
+       if get (f+1, r-1) game.board == Just (White, P) then [en_passant_move (f+1, r-1) (f,r)] else []
+     (Black, Just (f,r)) ->
+       if get (f-1, r+1) game.board == Just (Black, P) then [en_passant_move (f-1, r+1) (f,r)] else [] ++
+       if get (f+1, r+1) game.board == Just (Black, P) then [en_passant_move (f+1, r+1) (f,r)] else []
+
+
 legal_moves : Game -> List Move
 legal_moves game =
-  toIndexedList game.board |>
-  List.filter (\(s, (c, p)) -> c == game.to_move) |>
-  List.map (legal_moves_for game.board) |>
-  List.concat
+  (toIndexedList game.board |>
+   List.filter (\(s, (c, p)) -> c == game.to_move) |>
+   List.map (legal_moves_for game.board) |>
+   List.concat) ++
+  castling_moves game ++
+  en_passant_moves game
 
 castling_to_string : Castling -> String
 castling_to_string c =
