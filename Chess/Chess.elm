@@ -175,6 +175,10 @@ make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_nu
           if to == c8
           then board_set (board_clear board' a8) d8 (Black, R)
           else board_set (board_clear board' h8) f8 (Black, R)
+        (White, Just EnPassant) ->
+          board_clear board' (file to, rank to - 1)
+        (Black, Just EnPassant) ->
+          board_clear board' (file to, rank to + 1)
         _ -> board'
       to_move' = opposite to_move
       castling' =
@@ -186,7 +190,7 @@ make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_nu
           (Black, R, (0,7)) -> { white = castling.white, black = { queenside = False, kingside = castling.black.kingside } }
           (Black, R, (7,7)) -> { white = castling.white, black = { queenside = castling.black.queenside, kingside = False } }
           _                 -> castling
-      en_passant' = if piece == P && abs (rank from - rank to) == 2 then Just (file from, if to_move == White then 2 else 6) else Nothing
+      en_passant' = if piece == P && abs (rank from - rank to) == 2 then Just (file from, if to_move == White then 2 else 5) else Nothing
       capture_or_pawn_move' = if piece == P || captured /= Nothing then 0 else capture_or_pawn_move + 1
       move_number' = if to_move == White then move_number + 1 else move_number
       moves_played' = move :: moves_played
