@@ -1,4 +1,4 @@
-module Chess.Chess (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, board_clear, board_get, board_set, game_to_FEN, initial_board, initial_game, legal_moves, make_move, move_to_string, opposite, rank_index_to_string, square_to_string) where
+module Chess.Chess (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardClear, boardGet, boardSet, gameToFEN, initialBoard, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString) where
 import Array exposing (toIndexedList)
 import Dict exposing (Dict, fromList, get, insert, remove, union)
 import List exposing (indexedMap, map, repeat, take)
@@ -19,18 +19,24 @@ type alias Move = { piece: Piece, from: SquareIndex, to: SquareIndex, info: Mayb
 type Info = Promotion Piece | EnPassant | Castled
 type alias CanCastle = { kingside: Bool, queenside: Bool }
 type alias Castling = { white: CanCastle, black: CanCastle }
-type alias Game = { board: Board ColorPiece, to_move: Color, castling: Castling,
- en_passant: Maybe SquareIndex, capture_or_pawn_move: Int, move_number: Int, moves_played: List Move }
+type alias Game = { board: Board ColorPiece,
+                    attacked_by: Board (List (SquareIndex, ColorPiece)),
+                    to_move: Color,
+                    castling: Castling,
+                    en_passant: Maybe SquareIndex,
+                    capture_or_pawn_move: Int,
+                    move_number: Int,
+                    moves_played: List Move }
 
 type alias MoveList = List (List Move)
 type alias CandidateMoves = List (List SquareIndex)
 
-initial_board : Board ColorPiece
-initial_board =
-  let mk_rank rank color pieces = indexedMap (\file p -> ((file, rank), (color, p))) pieces |> fromList
-      back_rank = [R, N, B, Q, K, B, N, R]
+initialBoard : Board ColorPiece
+initialBoard =
+  let mkRank rank color pieces = indexedMap (\file p -> ((file, rank), (color, p))) pieces |> fromList
+      backRank = [R, N, B, Q, K, B, N, R]
       pawns = repeat 8 P
-  in mk_rank 0 White back_rank `union` mk_rank 1 White pawns `union` mk_rank 7 Black back_rank `union` mk_rank 6 Black pawns
+  in mkRank 0 White backRank `union` mkRank 1 White pawns `union` mkRank 7 Black backRank `union` mkRank 6 Black pawns
 
 opposite : Color -> Color
 opposite color =
@@ -44,56 +50,57 @@ file = fst
 rank : SquareIndex -> RankIndex
 rank = snd
 
-board_get : Board a -> SquareIndex -> Maybe a
-board_get = flip get
+boardGet : Board a -> SquareIndex -> Maybe a
+boardGet = flip get
 
-board_set : Board a -> SquareIndex -> a -> Board a
-board_set board square piece = insert square piece board
+boardSet : Board a -> SquareIndex -> a -> Board a
+boardSet board square piece = insert square piece board
 
-board_clear : Board a -> SquareIndex -> Board a
-board_clear = flip remove
+boardClear : Board a -> SquareIndex -> Board a
+boardClear = flip remove
 
 isEmpty : Board a -> SquareIndex -> Bool
-isEmpty board square = board_get board square == Nothing
+isEmpty board square = boardGet board square == Nothing
 
-each_square : (SquareIndex -> a) -> Board a
-each_square init_square =
+eachSquare : (SquareIndex -> a) -> Board a
+eachSquare init_square =
   map (\file -> map (\rank -> let sq = (file, rank) in (sq, init_square sq)) [0..7]) [0..7] |> List.concat |> Dict.fromList
 
-on_board : SquareIndex -> Bool
-on_board (file, rank) = 0 <= file && file < 8 && 0 <= rank && rank < 8
+onBoard : SquareIndex -> Bool
+onBoard (file, rank) = 0 <= file && file < 8 && 0 <= rank && rank < 8
 
 direction : SquareIndex -> Delta -> List SquareIndex
 direction ((f, r) as square) ((f_d, r_d) as delta) =
   let candidate = (f + f_d, r + r_d) in
-  if on_board candidate then candidate :: direction candidate delta else []
+  if onBoard candidate then candidate :: direction candidate delta else []
 
-pseudo_moves : Bool -> List Delta -> Board CandidateMoves
-pseudo_moves only_one directions =
+pseudoMoves : Bool -> List Delta -> Board CandidateMoves
+pseudoMoves only_one directions =
   let gen_square square =
         let squares = map (direction square) directions |> List.filter (List.isEmpty >> not) in
         if only_one then map (take 1) squares else List.sortBy List.length squares |> List.reverse in
-  each_square gen_square
+  eachSquare gen_square
 
-directions_b = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
-directions_r = [(0, 1), (0, -1), (1, 0), (-1, 0)]
-directions_n = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
-directions_q = directions_r ++ directions_b
+directionsB = [(1, 1), (1, -1), (-1, 1), (-1, -1)]
+directionsR = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+directionsN = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+directionsQ = directionsR ++ directionsB
 
 moves : Piece -> Board CandidateMoves
 moves piece =
   case piece of
-  B -> pseudo_moves False directions_b
-  R -> pseudo_moves False directions_r
-  N -> pseudo_moves True  directions_n
-  Q -> pseudo_moves False directions_q
-  K -> pseudo_moves True  directions_q
+  B -> pseudoMoves False directionsB
+  R -> pseudoMoves False directionsR
+  N -> pseudoMoves True  directionsN
+  Q -> pseudoMoves False directionsQ
+  K -> pseudoMoves True  directionsQ
   P -> Dict.empty
 
-initial_game : Game
-initial_game =
+initialGame : Game
+initialGame =
   let can_castle = { kingside = True, queenside = True }
-  in { board = initial_board,
+  in { board = initialBoard,
+       attacked_by = Dict.empty,
        to_move = White,
        castling = { white = can_castle, black = can_castle },
        en_passant = Nothing,
@@ -104,32 +111,32 @@ initial_game =
 toIndexedList : Board a -> List (SquareIndex, a)
 toIndexedList = Dict.toList
 
-is_check : Board ColorPiece -> Color -> SquareIndex -> Bool
-is_check board color square = on_board square && board_get board square == Just (opposite color, K)
+isCheck : Board ColorPiece -> Color -> SquareIndex -> Bool
+isCheck board color square = onBoard square && boardGet board square == Just (opposite color, K)
 
 files = Array.fromList ["a","b","c","d","e","f","g","h"]
 
-file_index_to_string : FileIndex -> String
-file_index_to_string file = withDefault "" (Array.get file files)
+fileIndexToString : FileIndex -> String
+fileIndexToString file = withDefault "" (Array.get file files)
 
-rank_index_to_string : RankIndex -> String
-rank_index_to_string rank = toString (rank+1)
+rankIndexToString : RankIndex -> String
+rankIndexToString rank = toString (rank+1)
 
-square_to_string : SquareIndex -> String
-square_to_string (file, rank) = file_index_to_string file ++ rank_index_to_string rank
+squareToString : SquareIndex -> String
+squareToString (file, rank) = fileIndexToString file ++ rankIndexToString rank
 
-piece_to_string : Piece -> String
-piece_to_string = toString
+pieceToString : Piece -> String
+pieceToString = toString
 
-move_to_string : Move -> String
-move_to_string { piece, from, to, info, check, captured } =
+moveToString : Move -> String
+moveToString { piece, from, to, info, check, captured } =
   case piece of
   P ->
     (if file from /= file to
-     then file_index_to_string (file from) ++ file_index_to_string (file to) ++ "x" ++ piece_to_string (withDefault P captured)
-     else square_to_string to) ++
+     then fileIndexToString (file from) ++ fileIndexToString (file to) ++ "x" ++ pieceToString (withDefault P captured)
+     else squareToString to) ++
     (case info of
-       Just (Promotion piece) -> "=" ++ piece_to_string piece
+       Just (Promotion piece) -> "=" ++ pieceToString piece
        Just EnPassant -> "e.p."
        _ -> "") ++
     (if check then "+" else "")
@@ -140,9 +147,9 @@ move_to_string { piece, from, to, info, check, captured } =
     let captured_to_string =
           case captured of
             Nothing -> ""
-            Just piece -> "x" ++ piece_to_string piece
+            Just piece -> "x" ++ pieceToString piece
         check_to_string = if check then "+" else ""
-    in piece_to_string piece ++ square_to_string to ++ captured_to_string ++ check_to_string
+    in pieceToString piece ++ squareToString to ++ captured_to_string ++ check_to_string
 
 a1 = (0,0)
 c1 = (2,0)
@@ -160,27 +167,27 @@ f8 = (5,7)
 g8 = (6,7)
 h8 = (7,7)
 
-make_move : Game -> Move -> Game
-make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_number, moves_played} as game) ({ piece, from, to, info, check, captured } as move) =
+makeMove : Game -> Move -> Game
+makeMove ({ board, attacked_by, to_move, castling, en_passant, capture_or_pawn_move, move_number, moves_played} as game) ({ piece, from, to, info, check, captured } as move) =
   let piece' =
         case info of
           Just (Promotion promoted_piece) -> promoted_piece
           _ -> piece
-      board' = board_set (board_clear board from) to (to_move, piece')
+      board' = boardSet (boardClear board from) to (to_move, piece')
       board'' =
         case (to_move, info) of
         (White, Just Castled) ->
           if to == c1
-          then board_set (board_clear board' a1) d1 (White, R)
-          else board_set (board_clear board' h1) f1 (White, R)
+          then boardSet (boardClear board' a1) d1 (White, R)
+          else boardSet (boardClear board' h1) f1 (White, R)
         (Black, Just Castled) ->
           if to == c8
-          then board_set (board_clear board' a8) d8 (Black, R)
-          else board_set (board_clear board' h8) f8 (Black, R)
+          then boardSet (boardClear board' a8) d8 (Black, R)
+          else boardSet (boardClear board' h8) f8 (Black, R)
         (White, Just EnPassant) ->
-          board_clear board' (file to, rank to - 1)
+          boardClear board' (file to, rank to - 1)
         (Black, Just EnPassant) ->
-          board_clear board' (file to, rank to + 1)
+          boardClear board' (file to, rank to + 1)
         _ -> board'
       to_move' = opposite to_move
       castling' =
@@ -196,15 +203,15 @@ make_move ({ board, to_move, castling, en_passant, capture_or_pawn_move, move_nu
       capture_or_pawn_move' = if piece == P || captured /= Nothing then 0 else capture_or_pawn_move + 1
       move_number' = if to_move == White then move_number + 1 else move_number
       moves_played' = move :: moves_played
-  in { board = board'', to_move = to_move', castling = castling',
+  in { board = board'', attacked_by = Dict.empty, to_move = to_move', castling = castling',
        en_passant = en_passant', capture_or_pawn_move = capture_or_pawn_move',
        move_number = move_number', moves_played = moves_played'}
 
 
-pawn_move : Board ColorPiece -> Color -> SquareIndex -> SquareIndex -> FileDelta -> Maybe Piece -> List Move
-pawn_move board color from ((to_f, to_r) as to) dir captured =
-  let check = is_check board color (to_f-1, to_r+dir) ||
-              is_check board color (to_f+1, to_r+dir)
+pawnMove : Board ColorPiece -> Color -> SquareIndex -> SquareIndex -> FileDelta -> Maybe Piece -> List Move
+pawnMove board color from ((to_f, to_r) as to) dir captured =
+  let check = isCheck board color (qside to_f, to_r+dir) ||
+              isCheck board color (kside to_f, to_r+dir)
       move = { piece = P, from = from, to = to, info = Nothing, check = check, captured = captured }
       promotions_moves = map (\p -> { move | info = Just (Promotion p)}) [Q,R,N,B]
   in case (color, to_r) of
@@ -212,35 +219,35 @@ pawn_move board color from ((to_f, to_r) as to) dir captured =
        (Black, 0) -> promotions_moves
        _ -> [move]
 
-pawn_moves_forward : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> RankDelta -> List Move
-pawn_moves_forward board (file, rank) color second dir =
+pawnMovesForward : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> RankDelta -> List Move
+pawnMovesForward board (file, rank) color second dir =
   let third = rank+dir in
   if isEmpty board (file, third)
-  then pawn_move board color (file, rank) (file, third) dir Nothing ++
+  then pawnMove board color (file, rank) (file, third) dir Nothing ++
        let fourth = third+dir in
        if rank == second && isEmpty board (file, fourth)
-       then pawn_move board color (file, rank) (file, fourth) dir Nothing
+       then pawnMove board color (file, rank) (file, fourth) dir Nothing
        else []
   else []
 
-pawn_move_capture : Board ColorPiece -> SquareIndex -> SquareIndex -> RankDelta -> Color -> List Move
-pawn_move_capture board from to dir color =
-  case board_get board to of
+pawnMoveCapture : Board ColorPiece -> SquareIndex -> SquareIndex -> RankDelta -> Color -> List Move
+pawnMoveCapture board from to dir color =
+  case boardGet board to of
     Just (cap_color, cap_piece) ->
       if cap_color /= color
-      then pawn_move board color from to dir (Just cap_piece)
+      then pawnMove board color from to dir (Just cap_piece)
       else []
     Nothing -> []
 
-pawn_moves_captures : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> List Move
-pawn_moves_captures board (file, rank) color dir =
-  pawn_move_capture board (file, rank) (file-1, rank+dir) dir color ++
-  pawn_move_capture board (file, rank) (file+1, rank+dir) dir color
+pawnMovesCaptures : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> List Move
+pawnMovesCaptures board (file, rank) color dir =
+  pawnMoveCapture board (file, rank) (qside file, rank+dir) dir color ++
+  pawnMoveCapture board (file, rank) (kside file, rank+dir) dir color
 
-legal_moves_for_pawn : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> RankDelta -> List Move
-legal_moves_for_pawn board square color second dir =
-  pawn_moves_forward board square color second dir ++
-  pawn_moves_captures board square color dir
+legalMovesForPawn : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> RankDelta -> List Move
+legalMovesForPawn board square color second dir =
+  pawnMovesForward board square color second dir ++
+  pawnMovesCaptures board square color dir
 
 split : (a -> Bool) -> List a -> (List a, List a)
 split p l =
@@ -248,85 +255,95 @@ split p l =
     [] -> ([], [])
     x :: xs -> if p x then let xs2 = split p xs in (x::fst xs2, snd xs2) else ([], l)
 
-piece_move piece from captured to =
+pieceMove piece from captured to =
   { piece = piece, from = from, to = to, info = Nothing, check = False, captured = captured }
 
-legal_moves_for_piece : Board ColorPiece -> SquareIndex -> ColorPiece -> List Move
-legal_moves_for_piece board square (color, piece) =
-  let pseudo_moves = withDefault [] (board_get (moves piece) square)
+legalMovesForPiece : Board ColorPiece -> SquareIndex -> ColorPiece -> List Move
+legalMovesForPiece board square (color, piece) =
+  let pseudoMoves = withDefault [] (boardGet (moves piece) square)
       pseudoToReal movelist =
         let (empty, nonEmpty) = split (isEmpty board) movelist
-        in map (piece_move piece square Nothing) empty ++
+        in map (pieceMove piece square Nothing) empty ++
            (case List.head nonEmpty of
               Just square_x ->
-                case board_get board square_x of
-                  Just (color_x, piece_x) -> if color == opposite color_x then [piece_move piece square (Just piece_x) square_x] else []
+                case boardGet board square_x of
+                  Just (color_x, piece_x) -> if color == opposite color_x then [pieceMove piece square (Just piece_x) square_x] else []
                   Nothing -> []
               Nothing -> [])
-  in List.concat (map pseudoToReal pseudo_moves)
+  in List.concat (map pseudoToReal pseudoMoves)
 
-legal_moves_for : Board ColorPiece -> (SquareIndex, ColorPiece) -> List Move
-legal_moves_for board (square, cp) =
+legalMovesFor : Board ColorPiece -> (SquareIndex, ColorPiece) -> List Move
+legalMovesFor board (square, cp) =
   case cp of
-    (White, P)     -> legal_moves_for_pawn board square White 1 1
-    (Black, P)     -> legal_moves_for_pawn board square Black 6 -1
-    (color, piece) -> legal_moves_for_piece board square cp
+    (White, P)     -> legalMovesForPawn board square White 1 1
+    (Black, P)     -> legalMovesForPawn board square Black 6 -1
+    (color, piece) -> legalMovesForPiece board square cp
 
-castling_moves : Game -> List Move
-castling_moves game =
+castlingMoves : Game -> List Move
+castlingMoves game =
   let are_empty = map (flip Dict.member game.board) >> List.any identity >> not
-      castles from to = { piece = K, from = from, to = to, info = Just Castled, check = False, captured = Nothing }
-      check_castles can start mid finish = if can && are_empty [mid, finish] then [castles start finish] else []
+      castle from to = { piece = K, from = from, to = to, info = Just Castled, check = False, captured = Nothing }
+      check_castle can start mid finish = if can && are_empty [mid, finish] then [castle start finish] else []
+      check_castles can_castle qb q k kb kn = check_castle can_castle.queenside k q qb ++ check_castle can_castle.kingside k kb kn
   in case (game.to_move) of
-     White ->
-       check_castles game.castling.white.queenside e1 d1 c1 ++ check_castles game.castling.white.kingside e1 f1 g1
-     Black ->
-       check_castles game.castling.black.queenside e8 d8 c8 ++ check_castles game.castling.black.kingside e8 f8 g8
+     White -> check_castles game.castling.white c1 d1 e1 f1 g1
+     Black -> check_castles game.castling.black c8 d8 e8 f8 g8
 
-en_passant_moves : Game -> List Move
-en_passant_moves game =
+qside : FileIndex -> FileIndex
+qside f = f-1
+
+kside : FileIndex -> FileIndex
+kside f = f-1
+
+forward : Color -> RankIndex -> RankIndex
+forward color r =
+  case color of
+  White -> r+1
+  Black -> r-1
+
+backward : Color -> RankIndex -> RankIndex
+backward color r = forward (opposite color) r
+
+enPassantMoves : Game -> List Move
+enPassantMoves game =
   let en_passant_move from to = { piece = P, from = from, to = to, info = Just EnPassant, check = False, captured = Just P }
-  in case (game.to_move, game.en_passant) of
-     (_, Nothing) -> []
-     (White, Just (f,r)) ->
-       if get (f-1, r-1) game.board == Just (White, P) then [en_passant_move (f-1, r-1) (f,r)] else [] ++
-       if get (f+1, r-1) game.board == Just (White, P) then [en_passant_move (f+1, r-1) (f,r)] else []
-     (Black, Just (f,r)) ->
-       if get (f-1, r+1) game.board == Just (Black, P) then [en_passant_move (f-1, r+1) (f,r)] else [] ++
-       if get (f+1, r+1) game.board == Just (Black, P) then [en_passant_move (f+1, r+1) (f,r)] else []
+      check_ep color from to = if get from game.board == Just (White, P) then [en_passant_move from to] else []
+      check_eps color ((f,r) as to) = check_ep color (qside f, backward color r) to ++ check_ep color (kside f, backward color r) to
+  in case game.en_passant of
+     Nothing -> []
+     Just to -> check_eps game.to_move to
 
-
-legal_moves : Game -> List Move
-legal_moves game =
+legalMoves : Game -> List Move
+legalMoves game =
   (toIndexedList game.board |>
    List.filter (\(s, (c, p)) -> c == game.to_move) |>
-   List.map (legal_moves_for game.board) |>
+   List.map (legalMovesFor game.board) |>
    List.concat) ++
-  castling_moves game ++
-  en_passant_moves game
+  castlingMoves game ++
+  enPassantMoves game
 
-castling_to_string : Castling -> String
-castling_to_string c =
+castlingToString : Castling -> String
+castlingToString c =
   let s p str = if p then str else ""
   in s c.white.kingside "K" ++ s c.white.queenside "Q" ++ s c.black.kingside "k" ++ s c.black.queenside "q"
 
-en_passant_to_string : Maybe SquareIndex -> String
-en_passant_to_string ep =
+enPassantToString : Maybe SquareIndex -> String
+enPassantToString ep =
   case ep of
     Nothing -> "-"
-    Just (square) -> square_to_string square
+    Just (square) -> squareToString square
 
-to_move_to_String : Color -> String
-to_move_to_String to_move =
+toMoveToString : Color -> String
+toMoveToString to_move =
   case to_move of
     White -> "w"
     Black -> "b"
 
-game_to_FEN: Game -> String
-game_to_FEN { board, to_move, castling, en_passant, capture_or_pawn_move, move_number } =
+gameToFEN: Game -> String
+gameToFEN { board, attacked_by, to_move, castling, en_passant, capture_or_pawn_move, move_number } =
   let rank_to_list rank = List.map (\file -> Dict.get (file,rank) board) [0..7]
       colorpiece_to_string (c,p) =
-        let s = piece_to_string p in
+        let s = pieceToString p in
         if c == White then s else String.toLower s
       rank_to_string n l =
         case l of
@@ -338,4 +355,4 @@ game_to_FEN { board, to_move, castling, en_passant, capture_or_pawn_move, move_n
         List.map (rank_to_string 0) |>
         List.reverse |>
         String.join "/"
-  in String.join " " [board_to_FEN board, to_move_to_String to_move, castling_to_string castling, en_passant_to_string en_passant, toString capture_or_pawn_move, toString move_number]
+  in String.join " " [board_to_FEN board, toMoveToString to_move, castlingToString castling, enPassantToString en_passant, toString capture_or_pawn_move, toString move_number]

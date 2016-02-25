@@ -11,21 +11,19 @@ import StartApp.Simple exposing (start)
 import String exposing (toLower)
 import Text exposing (fromString, height, monospace, typeface)
 
-import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, board_clear, board_get, board_set, game_to_FEN, initial_game, legal_moves, make_move, move_to_string, opposite, rank_index_to_string, square_to_string)
+import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardClear, boardGet, boardSet, gameToFEN, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString)
 
 square n = size n n empty
 unit = 60
-unit_square = square unit
-unit_spacer = spacer unit unit
-unit_string = fromString >> typeface ["arial", "tahoma", "helvetica"] >> height (0.75 * unit) >> centered >> container unit unit middle
-white_square = color Color.lightGrey unit_square
-black_square = color Color.darkGrey unit_square
-legend s = unit_square
+unitSquare = square unit
+unitSpacer = spacer unit unit
+unitString = fromString >> typeface ["arial", "tahoma", "helvetica"] >> height (0.75 * unit) >> centered >> container unit unit middle
+whiteSquare = color Color.lightGrey unitSquare
+blackSquare = color Color.darkGrey unitSquare
+legend s = unitSquare
 
-alternate a b n = if n == 0 then [] else a :: alternate b a (n-1)
-
-piece_to_i : Piece -> Int
-piece_to_i piece =
+pieceToInt : Piece -> Int
+pieceToInt piece =
   case piece of
   K -> 0
   Q -> 1
@@ -34,8 +32,8 @@ piece_to_i piece =
   N -> 4
   P -> 5
 
-int_to_piece : Int -> Piece
-int_to_piece piece =
+intToPiece : Int -> Piece
+intToPiece piece =
   case piece of
   0 -> K
   1 -> Q
@@ -44,27 +42,27 @@ int_to_piece piece =
   4 -> N
   _ -> P
 
-colorpiece_to_string : ColorPiece -> String
-colorpiece_to_string cp =
-    let piece_to_unicode base p = base + piece_to_i p |> Char.fromCode |> String.fromChar
+colorpieceToString : ColorPiece -> String
+colorpieceToString cp =
+    let piece_to_unicode base p = base + pieceToInt p |> Char.fromCode |> String.fromChar
         white_king = 9812
         black_king = white_king+6
     in case cp of
       (White, p) -> piece_to_unicode white_king p
       (Black, p) -> piece_to_unicode black_king p
 
-piece_to_element: Model -> SquareIndex -> Element
-piece_to_element { game, state, message } (f,r) =
-  let colored_square = if (f+r) % 2 == 0 then black_square else white_square in
-  case Chess.Chess.board_get game.board (f,r) of
+pieceToElement: Model -> SquareIndex -> Element
+pieceToElement { game, state, message } (f,r) =
+  let colored_square = if (f+r) % 2 == 0 then blackSquare else whiteSquare in
+  case Chess.Chess.boardGet game.board (f,r) of
     Nothing -> colored_square
     Just cp ->
-      let piece_element = colorpiece_to_string cp |> unit_string
+      let piece_element = colorpieceToString cp |> unitString
       in flow outward [colored_square, piece_element]
 
-promotion_dropdown : Signal.Address Action -> Dict Int Move -> Color -> Element
-promotion_dropdown address dict color =
-  let menu_item (i, move) = (colorpiece_to_string (color, int_to_piece i), MoveSelected [move])
+promotionDropdown : Signal.Address Action -> Dict Int Move -> Color -> Element
+promotionDropdown address dict color =
+  let menu_item (i, move) = (colorpieceToString (color, intToPiece i), MoveSelected [move])
   in ("Cancel", ClearSelection) :: map menu_item (Dict.toList dict) |> dropDown (Signal.message address) |> container (8*unit) (8*unit) middle
 
 groupBy : (v -> comparable) -> List v -> Dict comparable (List v)
@@ -75,8 +73,8 @@ groupBy getKey =
 indexBy : (v -> comparable) -> List v -> Dict comparable v
 indexBy getKey = List.foldl (\v -> Dict.insert (getKey v) v) Dict.empty
 
-add_handler: Signal.Address Action -> Model -> SquareIndex -> Element -> Element
-add_handler address { game, state, message } square element =
+addHandler: Signal.Address Action -> Model -> SquareIndex -> Element -> Element
+addHandler address { game, state, message } square element =
   case state of
     PickPiece dict ->
       case Dict.get square dict of
@@ -91,40 +89,38 @@ add_handler address { game, state, message } square element =
     PickPromotionPiece dict ->
       element
 
-moves_to_element : Model -> Element
-moves_to_element model =
+movesToElement : Model -> Element
+movesToElement model =
   let moves_to_string n l =
         let format_string = fromString >> height (unit/4) >> leftAligned >> width unit
-            numbered_move_to_string m = format_string (toString n ++ ". " ++ move_to_string m)
-            move_pair w b = flow right [numbered_move_to_string w, format_string (move_to_string b)] in
+            numbered_move_to_string m = toString n ++ ". " ++ moveToString m |> format_string
+            move_pair w b = flow right [numbered_move_to_string w, moveToString b |> format_string] in
         case l of
         w :: b :: l' -> move_pair w b :: moves_to_string (n+1) l'
-        w :: [] -> [numbered_move_to_string w]
-        [] -> []
-  in List.reverse model.game.moves_played |>
-     moves_to_string 1 |>
-     flow down
+        w :: []      -> [numbered_move_to_string w]
+        []           -> []
+  in List.reverse model.game.moves_played |> moves_to_string 1 |> flow down
 
-model_to_element: Signal.Address Action -> Model -> Element
-model_to_element address model =
-  let file_to_element r f = piece_to_element model (f,r) |> add_handler address model (f,r)
-      rank_legend = rank_index_to_string >> unit_string
+modelToElement: Signal.Address Action -> Model -> Element
+modelToElement address model =
+  let file_to_element r f = pieceToElement model (f,r) |> addHandler address model (f,r)
+      rank_legend = rankIndexToString >> unitString
       rank_to_element r = rank_legend r :: map (file_to_element r) [0..7]
-      file_legend = unit_spacer :: map unit_string ["a", "b", "c", "d", "e", "f", "g", "h"]
-      status_message = [unit_spacer, fromString model.message |> centered >> container (8*unit) unit middle]
-      fen_message = [unit_spacer, game_to_FEN model.game |> fromString |> height (unit/5) |> centered |> container (8*unit) unit middle]
+      file_legend = unitSpacer :: map unitString ["a", "b", "c", "d", "e", "f", "g", "h"]
+      status_message = [unitSpacer, fromString model.message |> centered >> container (8*unit) unit middle]
+      fen_message = [unitSpacer, gameToFEN model.game |> fromString |> height (unit/5) |> centered |> container (8*unit) unit middle]
       board = status_message :: map rank_to_element [7,6,5,4,3,2,1,0] ++ [file_legend, fen_message] |> map (flow right) |> flow down
-      moves = unit_spacer `above` (unit_spacer `beside` moves_to_element model)
+      moves = unitSpacer `above` (unitSpacer `beside` movesToElement model)
       board' =
         case model.state of
-        PickPromotionPiece dict -> flow outward [board, promotion_dropdown address dict model.game.to_move]
+        PickPromotionPiece dict -> flow outward [board, promotionDropdown address dict model.game.to_move]
         _ -> board
   in board' `beside` moves
 
 type Action = ClearSelection | PieceSelected (List Move)| MoveSelected (List Move) | OfferDraw | Resign
 
-pawn_promotion: Game -> ColorPiece -> SquareIndex -> SquareIndex -> Bool
-pawn_promotion game cp from (to_file, to_rank) =
+pawnPromotion: Game -> ColorPiece -> SquareIndex -> SquareIndex -> Bool
+pawnPromotion game cp from (to_file, to_rank) =
   case (cp, to_rank) of
     ((Black, P), 0) -> True
     ((White, P), 7) -> True
@@ -136,12 +132,12 @@ type State = PickPiece (Dict SquareIndex (List Move)) |
 
 type alias Model = { game: Game, state: State, moves: List Move, message: String }
 
-initial_model : Model
-initial_model =
-  let moves = legal_moves initial_game in { game = initial_game, moves = moves, state = PickPiece (groupBy .from moves), message = "" }
+initialModel : Model
+initialModel =
+  let moves = legalMoves initialGame in { game = initialGame, moves = moves, state = PickPiece (groupBy .from moves), message = "" }
 
 model : Model
-model = initial_model
+model = initialModel
 
 update : Action -> Model -> Model
 update action model =
@@ -149,25 +145,25 @@ update action model =
     ClearSelection ->
       { model | state = PickPiece (groupBy .from model.moves), message = "selection cleared" }
     PieceSelected moves ->
-      let message = map move_to_string moves |> String.join ", " in
+      let message = map moveToString moves |> String.join ", " in
       { model | state = PickDestination (groupBy .to moves), message = message }
     MoveSelected [] -> Debug.log  "Inconceivable" model
     MoveSelected (move :: []) ->
-      let game' = make_move model.game move
-          moves' = legal_moves game'
+      let game' = makeMove model.game move
+          moves' = legalMoves game'
       in { game = game', state = PickPiece (groupBy .from moves'), moves = moves', message = "" }
     MoveSelected moves ->
       let getInfo move =
         case move.info of
-        Just (Promotion p) -> piece_to_i p
-        _ -> piece_to_i P
+        Just (Promotion p) -> pieceToInt p
+        _ -> pieceToInt P
       in { model | state = PickPromotionPiece (indexBy getInfo moves), message = "pick what your pawn promotes to" }
     OfferDraw ->
       { model | state = PickPiece (groupBy .from model.moves), message = "offer declined" }
     Resign ->
-      { initial_model | message = "better luck next time" }
+      { initialModel | message = "better luck next time" }
 
 view : Signal.Address Action -> Model -> Html
-view address model = model_to_element address model |> fromElement
+view address model = modelToElement address model |> fromElement
 
-main = StartApp.Simple.start { model = initial_model, view = view, update = update }
+main = StartApp.Simple.start { model = initialModel, view = view, update = update }
