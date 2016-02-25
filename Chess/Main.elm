@@ -14,7 +14,7 @@ import Text exposing (fromString, height, monospace, typeface)
 import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, board_clear, board_get, board_set, game_to_FEN, initial_game, legal_moves, make_move, move_to_string, opposite, rank_index_to_string, square_to_string)
 
 square n = size n n empty
-unit = 100
+unit = 50
 unit_square = square unit
 unit_spacer = spacer unit unit
 unit_string = fromString >> typeface ["arial", "tahoma", "helvetica"] >> height (0.75 * unit) >> centered >> container unit unit middle
@@ -65,7 +65,7 @@ piece_to_element { game, state, message } (f,r) =
 promotion_dropdown : Signal.Address Action -> Dict Int Move -> Color -> Element
 promotion_dropdown address dict color =
   let menu_item (i, move) = (colorpiece_to_string (color, int_to_piece i), MoveSelected [move])
-  in ("Cancel", ClearSelection) :: map menu_item (Dict.toList dict) |> dropDown (Signal.message address) |> container 800 800 middle
+  in ("Cancel", ClearSelection) :: map menu_item (Dict.toList dict) |> dropDown (Signal.message address) |> container (8*unit) (8*unit) middle
 
 groupBy : (v -> comparable) -> List v -> Dict comparable (List v)
 groupBy getKey =

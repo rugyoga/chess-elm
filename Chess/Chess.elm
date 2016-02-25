@@ -90,14 +90,15 @@ moves piece =
   P -> Dict.empty
 
 initial_game : Game
-initial_game = { board = initial_board,
-                 to_move = White,
-                 castling = { white = { kingside = True, queenside = True },
-                              black = { kingside = True, queenside = True } },
-                 en_passant = Nothing,
-                 capture_or_pawn_move = 0,
-                 move_number = 1,
-                 moves_played = [] }
+initial_game =
+  let can_castle = { kingside = True, queenside = True }
+  in { board = initial_board,
+       to_move = White,
+       castling = { white = can_castle, black = can_castle },
+       en_passant = Nothing,
+       capture_or_pawn_move = 0,
+       move_number = 1,
+       moves_played = [] }
 
 toIndexedList : Board a -> List (SquareIndex, a)
 toIndexedList = Dict.toList
@@ -223,7 +224,10 @@ pawn_moves_forward board (file, rank) color second dir =
 pawn_move_capture : Board ColorPiece -> SquareIndex -> SquareIndex -> RankDelta -> Color -> List Move
 pawn_move_capture board from to dir color =
   case board_get board to of
-    Just (cap_color, cap_piece) -> pawn_move board color from to dir (Just cap_piece)
+    Just (cap_color, cap_piece) ->
+      if cap_color /= color
+      then pawn_move board color from to dir (Just cap_piece)
+      else []
     Nothing -> []
 
 pawn_moves_captures : Board ColorPiece -> SquareIndex -> Color -> RankIndex -> List Move
@@ -270,13 +274,12 @@ castling_moves : Game -> List Move
 castling_moves game =
   let are_empty = map (flip Dict.member game.board) >> List.any identity >> not
       castles from to = { piece = K, from = from, to = to, info = Just Castled, check = False, captured = Nothing }
+      check_castles can start mid finish = if can && are_empty [mid, finish] then [castles start finish] else []
   in case (game.to_move) of
      White ->
-       if game.castling.white.queenside && are_empty [d1, c1] then [castles e1 c1] else [] ++
-       if game.castling.white.kingside  && are_empty [f1, g1] then [castles e1 g1] else []
+       check_castles game.castling.white.queenside e1 d1 c1 ++ check_castles game.castling.white.kingside e1 f1 g1
      Black ->
-       if game.castling.black.queenside && are_empty [d8, c8] then [castles e8 c8] else [] ++
-       if game.castling.black.kingside  && are_empty [f8, g8] then [castles e8 g8] else []
+       check_castles game.castling.black.queenside e8 d8 c8 ++ check_castles game.castling.black.kingside e8 f8 g8
 
 en_passant_moves : Game -> List Move
 en_passant_moves game =
