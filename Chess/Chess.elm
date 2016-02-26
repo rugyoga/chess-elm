@@ -59,6 +59,9 @@ boardSet board square piece = insert square piece board
 boardClear : Board a -> SquareIndex -> Board a
 boardClear = flip remove
 
+boardMove : Board a -> SquareIndex -> SquareIndex -> a -> Board a
+boardMove board from to p = boardSet (boardClear board from) to p
+
 isEmpty : Board a -> SquareIndex -> Bool
 isEmpty board square = boardGet board square == Nothing
 
@@ -173,17 +176,17 @@ makeMove ({ board, attackedBy, toMove, castling, enPassant, captureOrPawnMove, m
         case info of
           Just (Promotion promotedPiece) -> promotedPiece
           rDelta -> piece
-      board' = boardSet (boardClear board from) to (toMove, piece')
+      board' = boardMove board from to (toMove, piece')
       board'' =
         case (toMove, info) of
         (White, Just Castled) ->
           if to == c1
-          then boardSet (boardClear board' a1) d1 (White, R)
-          else boardSet (boardClear board' h1) f1 (White, R)
+          then boardMove board' a1 d1 (White, R)
+          else boardMove board' h1 f1 (White, R)
         (Black, Just Castled) ->
           if to == c8
-          then boardSet (boardClear board' a8) d8 (Black, R)
-          else boardSet (boardClear board' h8) f8 (Black, R)
+          then boardMove board' a8 d8 (Black, R)
+          else boardMove board' h8 f8 (Black, R)
         (White, Just EnPassant) ->
           boardClear board' (file to, rank to - 1)
         (Black, Just EnPassant) ->
