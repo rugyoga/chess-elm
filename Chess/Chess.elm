@@ -296,7 +296,7 @@ qside : FileIndex -> FileIndex
 qside f = f-1
 
 kside : FileIndex -> FileIndex
-kside f = f-1
+kside f = f+1
 
 forward : Color -> RankIndex -> RankIndex
 forward color r =
