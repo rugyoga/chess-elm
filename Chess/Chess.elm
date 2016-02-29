@@ -345,7 +345,7 @@ inCheck game =
 castlingMoves : Game -> List Move
 castlingMoves game =
   let allEmpty = map (flip Dict.member game.board) >> List.any identity >> not
-      castle from to = { piece = K, from = from, to = to, info = Just Castled, check = False, captured = Nothing }
+      castle from to = { piece = K, from = from, to = to, info = Just Castled, check = checkForCheck game R to, captured = Nothing }
       checkCastle can start mid finish = if can && allEmpty [mid, finish] then [castle start finish] else []
       checkCastles canCastle qb q k kb kn = checkCastle canCastle.queenside k q qb ++ checkCastle canCastle.kingside k kb kn in
   case game.toMove of
@@ -383,10 +383,8 @@ legalMoves game =
 
 castlingToString : EachSide Castling -> String
 castlingToString c =
-  iff c.white.kingside  "K" ++
-  iff c.white.queenside "Q" ++
-  iff c.black.kingside  "k" ++
-  iff c.black.queenside "q"
+  let toString side = iff side.kingside "K" ++ iff side.queenside "Q" in
+  toString c.white ++ toLower (toString c.black)
 
 enPassantToString : Maybe SquareIndex -> String
 enPassantToString ep =
