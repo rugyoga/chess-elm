@@ -10,16 +10,16 @@ The first goal is to build a UI that allows you to play through any legal game.
 
 ## Done
 
-1. piece moves (and captures)
-2. pawns moves (and captures)
-3. double pawn moves
-4. en passant
-5. castling
-6. check detection
+- piece moves (and captures)
+- pawns moves (and captures)
+- double pawn moves
+- en passant
+- castling
+- check detection
 
 ##To-do
 
-1. handle getting out of check
-2. enforce kings can't meet
-3. checks that result from castling
-4. can't castle through check
+- handle getting out of check
+- enforce kings can't meet
+- checks that result from castling
+- can't castle through check
