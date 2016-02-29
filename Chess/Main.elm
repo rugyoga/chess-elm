@@ -11,7 +11,7 @@ import StartApp.Simple exposing (start)
 import String exposing (toLower)
 import Text exposing (fromString, height, monospace, typeface)
 
-import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardClear, boardGet, boardSet, gameToFEN, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString)
+import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardGet, gameToFEN, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString)
 
 square n = size n n empty
 unit = 60
@@ -114,7 +114,7 @@ modelToElement address model =
       board' =
         case model.state of
         PickPromotionPiece dict -> flow outward [board, promotionDropdown address dict model.game.toMove]
-        _ -> board
+        _                       -> board
   in board' `beside` moves
 
 type Action = ClearSelection | PieceSelected (List Move)| MoveSelected (List Move) | OfferDraw | Resign
