@@ -16,10 +16,10 @@ The first goal is to build a UI that allows you to play through any legal game.
 - en passant
 - castling
 - check detection
+- checks that result from castling
 
 ##To-do
 
 - handle getting out of check
 - enforce kings can't meet
-- checks that result from castling
 - can't castle through check
