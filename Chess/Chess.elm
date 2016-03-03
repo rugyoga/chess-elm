@@ -38,6 +38,15 @@ getByColor { white, black } color =
   White -> white
   Black -> black
 
+setByColor : EachSide a -> Color -> a -> EachSide a
+setByColor original color value =
+  case color of
+  White -> { original | white = value }
+  Black -> { original | black = value }
+
+updateByColor : EachSide a -> Color -> (a -> a) -> EachSide a
+updateByColor original color f = getByColor original color |> f |> setByColor original color
+
 initialBoard : Board ColorPiece
 initialBoard =
   let mkRank rank color pieces = indexedMap (\file p -> ((file, rank), (color, p))) pieces |> fromList
@@ -312,21 +321,23 @@ checkForCheck game piece square =
   let otherKing = opposite game.toMove |> getByColor game.kings in
   boardGet (moves piece) square |> withDefault [] |> checkSearch game.board otherKing
 
+pieceMove game piece from captured to -> Move
 pieceMove game piece from captured to =
   { piece = piece, from = from, to = to, info = Nothing, check = checkForCheck game piece to, captured = captured }
 
 legalMovesForPiece : Game -> SquareIndex -> ColorPiece -> List Move
 legalMovesForPiece game square (color, piece) =
   let pseudoMoves = boardGet (moves piece) square |> withDefault []
-      pseudoToReal movelist =
-        let (empty, nonEmpty) = split (isEmpty game.board) movelist in
-        map (pieceMove game piece square Nothing) empty ++
+      nonCapture  = pieceMove game piece square Nothing
+      pseudoToReal moves =
+        let (empty, nonEmpty) = split (isEmpty game.board) moves in
+        map nonCapture empty ++
         (case head nonEmpty of
+         Nothing      -> []
          Just squareX ->
            case boardGet game.board squareX of
            Just (colorX, pieceX) -> if color == opposite colorX then [pieceMove game piece square (Just pieceX) squareX] else []
-           Nothing -> []
-         Nothing -> []) in
+           Nothing               -> []) in
   concatMap pseudoToReal pseudoMoves
 
 legalMovesFor : Game -> (SquareIndex, ColorPiece) -> List Move
@@ -334,6 +345,7 @@ legalMovesFor game (square, cp) =
   case cp of
   (White, P)     -> legalMovesForPawn  game square White 1
   (Black, P)     -> legalMovesForPawn  game square Black 6
+  (color, K)     -> legalMovesForKing  game square
   (color, piece) -> legalMovesForPiece game square cp
 
 inCheck : Game -> Bool
@@ -345,8 +357,9 @@ inCheck game =
 castlingMoves : Game -> List Move
 castlingMoves game =
   let allEmpty = map (flip Dict.member game.board) >> List.any identity >> not
-      castle from to = { piece = K, from = from, to = to, info = Just Castled, check = checkForCheck game R to, captured = Nothing }
-      checkCastle can start mid finish = if can && allEmpty [mid, finish] then [castle start finish] else []
+      castle from to rook_to =
+        { piece = K, from = from, to = to, info = Just Castled, check = checkForCheck game R rook_to, captured = Nothing }
+      checkCastle can start mid finish = if can && allEmpty [mid, finish] then [castle start finish mid] else []
       checkCastles canCastle qb q k kb kn = checkCastle canCastle.queenside k q qb ++ checkCastle canCastle.kingside k kb kn in
   case game.toMove of
   White -> checkCastles game.castling.white c1 d1 e1 f1 g1
@@ -371,26 +384,83 @@ backRank color =
   Black -> 7
 
 backward : Color -> RankIndex -> RankIndex
-backward color r = forward (opposite color) r
+backward color = forward (opposite color)
+
+attackedBy : Game -> Color -> SquareIndex -> List SquareIndex
+attackedBy game attackerColor ((f,r) as square) =
+  let getMoves moves = boardGet moves square |> withDefault []
+      attackedBy' pieceList moveList =
+        let (empty, nonEmpty) = split (isEmpty game.board) moveList in
+        case nonEmpty of
+        square :: xs -> if List.member (withDefault (White,P) (boardGet game.board square)) pieceList then [square] else []
+        _            -> []
+      attackedByN = attackedBy' [(attackerColor, N)]
+      attackedByB = attackedBy' [(attackerColor, B), (attackerColor, Q)]
+      attackedByR = attackedBy' [(attackerColor, R), (attackerColor, Q)]
+      attackedByP = attackedBy' [(attackerColor, P)]
+      backOne     = backward attackerColor r
+      movesP      = [[(qside f, backOne)], [(kside f, backOne)]] in
+  concatMap attackedByN (getMoves movesN) ++ concatMap attackedByB (getMoves movesB) ++
+  concatMap attackedByR (getMoves movesR) ++ concatMap attackedByP movesP
+
+legalMovesForKing : Game -> SquareIndex -> List Move
+legalMovesForKing game square =
+  let pseudoMoves = boardGet movesK square |> withDefault [] |> List.concat
+      goodKingMove square = notInCheck game square && kingsCantMeet
+      makeKMove =  in
+  filter (\m -> True) pseudoMoves
+
+intermediateSquares : SquareIndex -> SquareIndex -> List SquareIndex
+intermediateSquares (f1,r1) (f2,r2) =
+  let path (f,r) (fFinish,rFinish) fD rD =
+        if f == fFinish && r == rFinish then [] else (f, r) :: path (f+fD,r+rD) (fFinish, rFinish) fD rD
+      delta a b = if a == b then 0 else if b > a then 1 else -1
+      fD = delta f1 f2
+      rD = delta r1 r2 in
+  path (f1+fD, r1+rD) (f2, r2) fD rD
+
+legalMovesWhenInCheck : Game -> List Move
+legalMovesWhenInCheck game =
+  let checkedKing   = getByColor game.kings game.toMove
+      attackerColor = opposite game.toMove
+      attackers     = attackedBy game attackerColor checkedKing
+      attacker      = head attackers |> withDefault a1
+      attackPiece   = boardGet game.board attacker |> withDefault (White,P) in
+  legalMovesForKing game checkedKing ++
+  if length attackers >= 2
+  then []
+  else
+    let typicalMoves = regularMoves game
+        captureAttacker = filter (\m -> m.to == attacker) typicalMoves
+        blockAttacker   =
+          if List.member (snd attackPiece) [N, P]
+          then []
+          else let between = intermediateSquares checkedKing attacker in
+               filter (\m -> List.member m.to between) typicalMoves in
+    captureAttacker ++ blockAttacker
+
+regularMoves : Game -> List Move
+regularMoves game =
+  toIndexedList game.board |>
+  filter (\(s, (c, p)) -> c == game.toMove) |>
+  concatMap (legalMovesFor game)
 
 legalMoves : Game -> List Move
 legalMoves game =
-  (toIndexedList game.board |>
-   filter (\(s, (c, p)) -> c == game.toMove) |>
-   concatMap (legalMovesFor game)) ++
-  (if inCheck game then [] else castlingMoves game) ++
-  enPassantMoves game
+  if inCheck game
+  then legalMovesWhenInCheck game
+  else regularMoves game ++ castlingMoves game ++ enPassantMoves game
 
 castlingToString : EachSide Castling -> String
 castlingToString c =
   let toString side = iff side.kingside "K" ++ iff side.queenside "Q" in
-  toString c.white ++ toLower (toString c.black)
+  toString c.white ++ String.toLower (toString c.black)
 
 enPassantToString : Maybe SquareIndex -> String
 enPassantToString ep =
   case ep of
-  Nothing -> "-"
-  Just (square) -> squareToString square
+  Nothing     -> "-"
+  Just square -> squareToString square
 
 toMoveToString : Color -> String
 toMoveToString toMove =
