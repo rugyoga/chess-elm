@@ -321,7 +321,7 @@ checkForCheck game piece square =
   let otherKing = opposite game.toMove |> getByColor game.kings in
   boardGet (moves piece) square |> withDefault [] |> checkSearch game.board otherKing
 
-pieceMove game piece from captured to -> Move
+pieceMove : Game -> Piece -> SquareIndex -> Maybe Piece -> SquareIndex -> Move
 pieceMove game piece from captured to =
   { piece = piece, from = from, to = to, info = Nothing, check = checkForCheck game piece to, captured = captured }
 
@@ -356,10 +356,11 @@ inCheck game =
 
 castlingMoves : Game -> List Move
 castlingMoves game =
-  let allEmpty = map (flip Dict.member game.board) >> List.any identity >> not
+  let safe square = attackedBy game (opposite game.toMove) square |> List.isEmpty
+      allEmpty = map (flip Dict.member game.board) >> List.any identity >> not
       castle from to rook_to =
         { piece = K, from = from, to = to, info = Just Castled, check = checkForCheck game R rook_to, captured = Nothing }
-      checkCastle can start mid finish = if can && allEmpty [mid, finish] then [castle start finish mid] else []
+      checkCastle can start mid finish = if can && allEmpty [mid, finish] && List.all safe [mid, finish] then [castle start finish mid] else []
       checkCastles canCastle qb q k kb kn = checkCastle canCastle.queenside k q qb ++ checkCastle canCastle.kingside k kb kn in
   case game.toMove of
   White -> checkCastles game.castling.white c1 d1 e1 f1 g1
@@ -394,6 +395,7 @@ attackedBy game attackerColor ((f,r) as square) =
         case nonEmpty of
         square :: xs -> if List.member (withDefault (White,P) (boardGet game.board square)) pieceList then [square] else []
         _            -> []
+      attackedByK = attackedBy' [(attackerColor, K)]
       attackedByN = attackedBy' [(attackerColor, N)]
       attackedByB = attackedBy' [(attackerColor, B), (attackerColor, Q)]
       attackedByR = attackedBy' [(attackerColor, R), (attackerColor, Q)]
@@ -401,23 +403,28 @@ attackedBy game attackerColor ((f,r) as square) =
       backOne     = backward attackerColor r
       movesP      = [[(qside f, backOne)], [(kside f, backOne)]] in
   concatMap attackedByN (getMoves movesN) ++ concatMap attackedByB (getMoves movesB) ++
-  concatMap attackedByR (getMoves movesR) ++ concatMap attackedByP movesP
+  concatMap attackedByR (getMoves movesR) ++ concatMap attackedByP movesP ++
+  concatMap attackedByK (getMoves movesK)
 
 legalMovesForKing : Game -> SquareIndex -> List Move
 legalMovesForKing game square =
-  let pseudoMoves = boardGet movesK square |> withDefault [] |> List.concat
-      goodKingMove square = notInCheck game square && kingsCantMeet
-      makeKMove =  in
-  filter (\m -> True) pseudoMoves
+  let pseudoMoves         = boardGet movesK square |> withDefault [] |> List.concat
+      getContents sq      = (sq, boardGet game.board sq)
+      otherColor          = opposite game.toMove
+      validContents maybe =
+        case maybe of
+        Nothing -> True
+        Just (color, piece) -> color == otherColor
+      goodKingMove sq    = attackedBy game otherColor sq |> List.isEmpty in
+  map getContents pseudoMoves |> filter (snd >> validContents) |> filter (fst >> goodKingMove) |> map (\(to,p) -> pieceMove game K square (Maybe.map snd p) to)
 
 intermediateSquares : SquareIndex -> SquareIndex -> List SquareIndex
 intermediateSquares (f1,r1) (f2,r2) =
-  let path (f,r) (fFinish,rFinish) fD rD =
-        if f == fFinish && r == rFinish then [] else (f, r) :: path (f+fD,r+rD) (fFinish, rFinish) fD rD
-      delta a b = if a == b then 0 else if b > a then 1 else -1
+  let delta a b = if a == b then 0 else if a < b then 1 else -1
       fD = delta f1 f2
-      rD = delta r1 r2 in
-  path (f1+fD, r1+rD) (f2, r2) fD rD
+      rD = delta r1 r2
+      path (f,r) = if f == f2 && r == r2 then [] else (f, r) :: path (f+fD,r+rD) in
+  path (f1+fD, r1+rD)
 
 legalMovesWhenInCheck : Game -> List Move
 legalMovesWhenInCheck game =

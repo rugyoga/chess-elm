@@ -17,9 +17,14 @@ The first goal is to build a UI that allows you to play through any legal game.
 - castling
 - check detection
 - checks that result from castling
-
-##To-do
-
 - handle getting out of check
 - enforce kings can't meet
 - can't castle through check
+
+## To Do
+
+- recognize checkmate
+- recognize stalemate
+- detect draw through lack of material
+- detect draw through repetition
+- detect draw through threefold repetition
