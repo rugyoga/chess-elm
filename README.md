@@ -8,6 +8,26 @@ To simplify the UI, I leverage the [Unicode chess pieces] (https://en.wikipedia.
 
 The first goal is to build a UI that allows you to play through any legal game.
 
+To build (on Mac OS/X):
+
+```
+brew install elm
+elm-make
+```
+
+To run:
+
+```
+elm reactor -a=localhost
+```
+
+Then browse to:
+
+```
+http://localhost:8000/Chess/Main.elm
+```
+
+
 ## Done
 
 - piece moves (and captures)
