@@ -2,16 +2,19 @@ import Array exposing (get)
 import Char
 import Color
 import Dict exposing (Dict, insert)
-import Graphics.Element exposing (Element, above, below, beside, centered, color, container, down, empty, flow, leftAligned, middle, opacity, outward, right, size, spacer, width)
-import Graphics.Input exposing (button, clickable, dropDown)
-import Html exposing (Html, fromElement)
-import List exposing (filter, map, map2, member)
+import Element exposing (Element, above, below, beside, centered, color,
+    container, down, empty, flow, leftAligned, middle,
+    opacity, outward, right, size, spacer, toHtml, width)
+-- import Graphics.Input exposing ()
+import Html exposing (Html, button)
+import Html.Events exposing (onClick)
+import List exposing (filter, map, map2, member, range)
 import Maybe exposing (withDefault)
-import StartApp.Simple exposing (start)
+-- import StartApp.Simple exposing (start)
 import String exposing (toLower)
 import Text exposing (fromString, height, monospace, typeface)
 
-import Chess.Chess exposing (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardGet, gameToFEN, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString)
+import Chess.Chess exposing (..)
 
 square n = size n n empty
 unit = 60
@@ -60,10 +63,10 @@ pieceToElement model (f,r) =
       let pieceElement = colorpieceToString cp |> unitString
       in flow outward [coloredSquare, pieceElement]
 
-promotionDropdown : Signal.Address Action -> Dict Int Move -> Color -> Element
-promotionDropdown address dict color =
-  let menuItem (i, move) = (colorpieceToString (color, intToPiece i), MoveSelected [move])
-  in ("Cancel", ClearSelection) :: map menuItem (Dict.toList dict) |> dropDown (Signal.message address) |> container (8*unit) (8*unit) middle
+-- promotionDropdown : Signal.Address Action -> Dict Int Move -> Color -> Element
+-- promotionDropdown address dict color =
+--   let menuItem (i, move) = (colorpieceToString (color, intToPiece i), MoveSelected [move])
+--   in ("Cancel", ClearSelection) :: map menuItem (Dict.toList dict) |> dropDown (Signal.message address) |> container (8*unit) (8*unit) middle
 
 groupBy : (v -> comparable) -> List v -> Dict comparable (List v)
 groupBy getKey =
@@ -73,19 +76,19 @@ groupBy getKey =
 indexBy : (v -> comparable) -> List v -> Dict comparable v
 indexBy getKey = List.foldl (\v -> Dict.insert (getKey v) v) Dict.empty
 
-addHandler: Signal.Address Action -> Model -> SquareIndex -> Element -> Element
-addHandler address model square element =
+addHandler: Model -> SquareIndex -> Element -> Element
+addHandler model square element =
   case model.state of
     PickPiece dict ->
       case Dict.get square dict of
         Nothing    -> element
-        Just moves -> PieceSelected moves |> Signal.message address |> flip clickable element
+        Just moves -> PieceSelected moves |> flip clickable element
     PickDestination dict ->
       let response =
         case Maybe.withDefault [] (Dict.get square dict)  of
           [] -> ClearSelection
           xs -> MoveSelected xs
-      in clickable (Signal.message address response) element
+      in clickable element
     PickPromotionPiece dict ->
       element
 
@@ -96,28 +99,28 @@ movesToElement model =
             nMoveToString m = toString n ++ ". " ++ moveToString m |> formatString
             movePair w b = flow right [nMoveToString w, moveToString b |> formatString] in
         case l of
-        w :: b :: l' -> movePair w b :: movesToString (n+1) l'
+        w :: b :: l2 -> movePair w b :: movesToString (n+1) l2
         w :: []      -> [nMoveToString w]
         []           -> []
   in List.reverse (getGameWithMoves model).game.movesPlayed |> movesToString 1 |> flow down
 
-modelToElement: Signal.Address Action -> Model -> Element
-modelToElement address model =
-  let fileToElement r f = pieceToElement model (f,r) |> addHandler address model (f,r)
+modelToElement: Model -> Element
+modelToElement model =
+  let fileToElement r f = pieceToElement model (f,r) |> addHandler model (f,r)
       rankLegend = rankIndexToString >> unitString
-      rankToElement r = rankLegend r :: map (fileToElement r) [0..7]
+      rankToElement r = rankLegend r :: map (fileToElement r) (range 0 7)
       fileLegend = unitSpacer :: map unitString ["a", "b", "c", "d", "e", "f", "g", "h"]
       statusMessage = [unitSpacer, fromString model.message |> centered >> container (8*unit) unit middle]
       fenMessage = [unitSpacer, getGameWithMoves model |> .game |> gameToFEN |> fromString |> height (unit/5) |> centered |> container (8*unit) unit middle]
       board = statusMessage :: map rankToElement [7,6,5,4,3,2,1,0] ++ [fileLegend, fenMessage] |> map (flow right) |> flow down
-      moves = unitSpacer `above` (unitSpacer `beside` movesToElement model)
-      board' =
+      moves = above unitSpacer (beside unitSpacer (movesToElement model))
+      board2 =
         case model.state of
-        PickPromotionPiece dict -> flow outward [board, promotionDropdown address dict (getGameWithMoves model).game.toMove]
+        PickPromotionPiece dict -> flow outward [board, promotionDropdown dict (getGameWithMoves model).game.toMove]
         _                       -> board
-  in board' `beside` moves
+  in beside board2 moves
 
-type Action = ClearSelection | PieceSelected (List Move)| MoveSelected (List Move) | OfferDraw | Resign
+type Msg = ClearSelection | PieceSelected (List Move)| MoveSelected (List Move) | OfferDraw | Resign
 
 pawnPromotion: Game -> ColorPiece -> SquareIndex -> SquareIndex -> Bool
 pawnPromotion game cp from (toFile, toRank) =
@@ -146,10 +149,10 @@ model = initialModel
 getGameWithMoves : Model -> GameWithMoves
 getGameWithMoves model = List.head model.history |> withDefault initialGameWithMoves
 
-update : Action -> Model -> Model
-update action model =
+update : Msg -> Model -> Model
+update msg model =
   let previous = getGameWithMoves model in
-  case action of
+  case msg of
     ClearSelection ->
       { model | state = PickPiece (groupBy .from previous.moves), message = "selection cleared" }
     PieceSelected moves ->
@@ -157,9 +160,9 @@ update action model =
       { model | state = PickDestination (groupBy .to moves), message = message }
     MoveSelected [] -> Debug.log  "Inconceivable" model
     MoveSelected (move :: []) ->
-      let game'  = makeMove previous.game move
-          moves' = legalMoves game' in
-      { history = { game = game', moves = moves'} :: model.history, state = PickPiece (groupBy .from moves'), message = "" }
+      let game2  = makeMove previous.game move
+          moves2 = legalMoves game2 in
+      { history = { game = game2, moves = moves2} :: model.history, state = PickPiece (groupBy .from moves2), message = "" }
     MoveSelected moves ->
       let getInfo move =
         case move.info of
@@ -171,7 +174,7 @@ update action model =
     Resign ->
       { initialModel | message = "better luck next time" }
 
-view : Signal.Address Action -> Model -> Html
-view address model = modelToElement address model |> fromElement
+view : Model -> Html Msg
+view  model = modelToElement model |> Element.toHtml
 
-main = StartApp.Simple.start { model = initialModel, view = view, update = update }
+main = Html.beginnerProgram { model = initialModel, view = view, update = update }

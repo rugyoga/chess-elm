@@ -1,9 +1,11 @@
-module Chess.Chess (Board, Color(..), ColorPiece, Game, Info(..), Move, Piece(..), SquareIndex, boardClear, boardGet, boardSet, gameToFEN, initialBoard, initialGame, legalMoves, makeMove, moveToString, opposite, rankIndexToString, squareToString) where
+module Chess.Chess exposing (..)
+
 import Array exposing (toIndexedList)
 import Dict exposing (Dict, fromList, get, insert, remove, union)
-import List exposing (indexedMap, concatMap, filter, head, length, map, repeat, reverse, sortBy, take)
+import List exposing (indexedMap, concatMap, filter, foldl, head, length, map, range, repeat, reverse, sortBy, take)
 import Maybe exposing (Maybe, withDefault)
 import String exposing (concat, join)
+import Tuple exposing (first, second)
 
 type alias Board element = Dict SquareIndex element
 type Color = Black | White
@@ -52,7 +54,7 @@ initialBoard =
   let mkRank rank color pieces = indexedMap (\file p -> ((file, rank), (color, p))) pieces |> fromList
       backRank = [R, N, B, Q, K, B, N, R]
       pawns = repeat 8 P in
-  mkRank 0 White backRank `union` mkRank 1 White pawns `union` mkRank 7 Black backRank `union` mkRank 6 Black pawns
+  foldl union Dict.empty [mkRank 0 White backRank,  mkRank 1 White pawns, mkRank 7 Black backRank, mkRank 6 Black pawns]
 
 opposite : Color -> Color
 opposite color =
@@ -61,10 +63,10 @@ opposite color =
   Black -> White
 
 file : SquareIndex -> FileIndex
-file = fst
+file = first
 
 rank : SquareIndex -> RankIndex
-rank = snd
+rank = second
 
 boardGet : Board a -> SquareIndex -> Maybe a
 boardGet = flip get
@@ -83,7 +85,7 @@ isEmpty board square = boardGet board square == Nothing
 
 eachSquare : (SquareIndex -> a) -> Board a
 eachSquare initSquare =
-  concatMap (\file -> map (\rank -> let sq = (file, rank) in (sq, initSquare sq)) [0..7]) [0..7] |> Dict.fromList
+  concatMap (\file -> map (\rank -> let sq = (file, rank) in (sq, initSquare sq)) (range 0 7)) (range 0 7) |> Dict.fromList
 
 onBoard : SquareIndex -> Bool
 onBoard (file, rank) = 0 <= file && file < 8 && 0 <= rank && rank < 8
@@ -307,7 +309,7 @@ split : (a -> Bool) -> List a -> (List a, List a)
 split p l =
   case l of
   []      -> ([], [])
-  x :: xs -> if p x then let xs2 = split p xs in (x::fst xs2, snd xs2) else ([], l)
+  x :: xs -> if p x then let xs2 = split p xs in (x::first xs2, second xs2) else ([], l)
 
 checkSearch : Board ColorPiece -> SquareIndex -> CandidateMoves -> Bool
 checkSearch board square moves =
@@ -390,16 +392,16 @@ backward color = forward (opposite color)
 attackedBy : Game -> Color -> SquareIndex -> List SquareIndex
 attackedBy game attackerColor ((f,r) as square) =
   let getMoves moves = boardGet moves square |> withDefault []
-      attackedBy' pieceList moveList =
+      attackedBySub pieceList moveList =
         let (empty, nonEmpty) = split (isEmpty game.board) moveList in
         case nonEmpty of
         square :: xs -> if List.member (withDefault (White,P) (boardGet game.board square)) pieceList then [square] else []
         _            -> []
-      attackedByK = attackedBy' [(attackerColor, K)]
-      attackedByN = attackedBy' [(attackerColor, N)]
-      attackedByB = attackedBy' [(attackerColor, B), (attackerColor, Q)]
-      attackedByR = attackedBy' [(attackerColor, R), (attackerColor, Q)]
-      attackedByP = attackedBy' [(attackerColor, P)]
+      attackedByK = attackedBySub [(attackerColor, K)]
+      attackedByN = attackedBySub [(attackerColor, N)]
+      attackedByB = attackedBySub [(attackerColor, B), (attackerColor, Q)]
+      attackedByR = attackedBySub [(attackerColor, R), (attackerColor, Q)]
+      attackedByP = attackedBySub [(attackerColor, P)]
       backOne     = backward attackerColor r
       movesP      = [[(qside f, backOne)], [(kside f, backOne)]] in
   concatMap attackedByN (getMoves movesN) ++ concatMap attackedByB (getMoves movesB) ++
@@ -416,7 +418,7 @@ legalMovesForKing game square =
         Nothing -> True
         Just (color, piece) -> color == otherColor
       goodKingMove sq    = attackedBy game otherColor sq |> List.isEmpty in
-  map getContents pseudoMoves |> filter (snd >> validContents) |> filter (fst >> goodKingMove) |> map (\(to,p) -> pieceMove game K square (Maybe.map snd p) to)
+  map getContents pseudoMoves |> filter (second >> validContents) |> filter (first >> goodKingMove) |> map (\(to,p) -> pieceMove game K square (Maybe.map second p) to)
 
 intermediateSquares : SquareIndex -> SquareIndex -> List SquareIndex
 intermediateSquares (f1,r1) (f2,r2) =
@@ -440,7 +442,7 @@ legalMovesWhenInCheck game =
     let typicalMoves = regularMoves game
         captureAttacker = filter (\m -> m.to == attacker) typicalMoves
         blockAttacker   =
-          if List.member (snd attackPiece) [N, P]
+          if List.member (second attackPiece) [N, P]
           then []
           else let between = intermediateSquares checkedKing attacker in
                filter (\m -> List.member m.to between) typicalMoves in
@@ -477,7 +479,7 @@ toMoveToString toMove =
 
 gameToFEN: Game -> String
 gameToFEN { board, attackedBy, toMove, kings, castling, enPassant, captureOrPawnMove, moveNumber } =
-  let rankToList rank = map (\file -> Dict.get (file,rank) board) [0..7]
+  let rankToList rank = map (\file -> Dict.get (file,rank) board) (range 0 7)
       colorpieceToString (c,p) =
         let s = pieceToString p in
         if c == White then s else String.toLower s
@@ -486,5 +488,5 @@ gameToFEN { board, attackedBy, toMove, kings, castling, enPassant, captureOrPawn
         []           -> if n > 0 then toString n else ""
         Nothing::cps -> rankToString (n+1) cps
         Just cp::cps -> rankToString n [] ++ colorpieceToString cp ++ rankToString 0 cps
-      boardToFEN board = map (rankToList >> rankToString 0) [0..7] |> reverse |> join "/" in
+      boardToFEN board = map (rankToList >> rankToString 0) (range 0 7) |> reverse |> join "/" in
   join " " [boardToFEN board, toMoveToString toMove, castlingToString castling, enPassantToString enPassant, toString captureOrPawnMove, toString moveNumber]
